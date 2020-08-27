@@ -1203,9 +1203,7 @@ class FP16_DeepSpeedZeroOptimizer(object):
 
             if self.cpu_offload:
                 self.averaged_gradients[i] = self.averaged_gradients_on_cpu[i]
-            #norm_groups.append(
-            #    self.get_grad_norm_direct(self.averaged_gradients[i],
-            #                              self.params_in_partition[i]))
+
             norm_groups.append(
                 self.get_grad_norm_direct(self.averaged_gradients[i],
                                           self.params_in_partition[i]))
@@ -1251,11 +1249,12 @@ class FP16_DeepSpeedZeroOptimizer(object):
                         fp32_partition,
                         torch.cuda.current_device(),
                         stream)
-                #for averaged_gradients_cpu, fp32_partition in zip(self.averaged_gradients_on_cpu, self.single_partition_of_fp32_groups):
-                #    averaged_gradients_cpu = [fp32_partition]
+                for averaged_gradients_cpu, fp32_partition in zip(self.averaged_gradients_on_cpu, self.single_partition_of_fp32_groups):
+                    averaged_gradients_cpu = [fp32_partition]
         else:
             for fp16_partitions, fp32_partition in zip(self.parallel_partitioned_fp16_groups, self.single_partition_of_fp32_groups):
                 fp16_partitions[partition_id].data.copy_(fp32_partition.data)
+
         timers('optimizer_step').stop()
 
         timers('optimizer_allgather').start()
