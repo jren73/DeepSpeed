@@ -120,6 +120,7 @@ def async_copy_to(obj, dev, main_stream=None):
     if torch.is_tensor(obj):
         obj = Variable(obj)
     if isinstance(obj, Variable):
+
         target = torch.empty_like(obj, device=dev).copy_(obj)
         if main_stream is not None:
             target.data.record_stream(main_stream)
@@ -219,6 +220,7 @@ class FP16_DeepSpeedZeroOptimizer(object):
         #a single 32-bit partition of the parallel partitioned parameters
         #that this process will update
         self.single_partition_of_fp32_groups = []
+
         if cpu_offload:
             self.averaged_gradients_on_cpu = {}
         #param partition info
@@ -792,6 +794,8 @@ class FP16_DeepSpeedZeroOptimizer(object):
     def reduce_ipg_grads(self):
         if self.overlap_comm:
             stream = self.reduction_stream
+        elif self.cpu_offload:
+            stream = self.migration_stream
         else:
             stream = torch.cuda.current_stream()
 
@@ -808,7 +812,8 @@ class FP16_DeepSpeedZeroOptimizer(object):
                 self.params_already_reduced[param_id] = True
 
                 if not self.is_param_in_current_partition[param_id]:
-                    if self.overlap_comm and self.contiguous_gradients is False:
+                    if (self.overlap_comm
+                            or self.cpu_offload) and self.contiguous_gradients is False:
                         # Clear the previous grads during the next reduction
                         # to avoid clearing them before the reduction is complete.
                         if self.previous_reduced_grads is None:
@@ -1193,12 +1198,13 @@ class FP16_DeepSpeedZeroOptimizer(object):
             timers('optimizer_step').stop()
             timers('optimizer_allgather').start()
             timers('optimizer_allgather').stop()
-            return
+            #return
 
         norm_groups = []
         single_partition_grad_groups = []
         skip = False
         partition_id = dist.get_rank(group=self.dp_process_group)
+
         for i, group in enumerate(self.fp16_groups):
 
             if self.cpu_offload:
@@ -1239,6 +1245,8 @@ class FP16_DeepSpeedZeroOptimizer(object):
         self.unscale_and_clip_grads(single_partition_grad_groups, norm_groups)
 
         self.cpu_computation_stream.wait_stream(self.migration_stream)
+        if self.overflow:
+            return
         timers('optimizer_step').start()
         with torch.cuda.stream(self.cpu_computation_stream):
             self.optimizer.step()
@@ -1251,11 +1259,12 @@ class FP16_DeepSpeedZeroOptimizer(object):
                         fp32_partition,
                         torch.cuda.current_device(),
                         stream)
-                #for averaged_gradients_cpu, fp32_partition in zip(self.averaged_gradients_on_cpu, self.single_partition_of_fp32_groups):
-                #    averaged_gradients_cpu = [fp32_partition]
+                for averaged_gradients_cpu, fp32_partition in zip(self.averaged_gradients_on_cpu, self.single_partition_of_fp32_groups):
+                    averaged_gradients_cpu = [fp32_partition]
         else:
             for fp16_partitions, fp32_partition in zip(self.parallel_partitioned_fp16_groups, self.single_partition_of_fp32_groups):
                 fp16_partitions[partition_id].data.copy_(fp32_partition.data)
+
         timers('optimizer_step').stop()
 
         timers('optimizer_allgather').start()
@@ -1414,7 +1423,7 @@ class FP16_DeepSpeedZeroOptimizer(object):
                                     device=torch.cuda.current_device())
                 self.ipg_buffer.append(buf_1)
             self.ipg_index = 0
-        torch.cuda.empty_cache()
+        #torch.cuda.empty_cache()
         self.loss_scaler.backward(loss.float(), retain_graph=retain_graph)
 
     def check_overflow(self, partition_gradients=True):
