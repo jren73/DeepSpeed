@@ -320,7 +320,6 @@ class FP16_DeepSpeedZeroOptimizer(object):
             self.params_not_in_partition.append(params_not_in_partition)
             self.first_offset.append(first_offset)
 
-        #self.single_partition_of_fp32_groups_old=self.single_partition_of_fp32_groups
         self.reduce_bucket_size = int(reduce_bucket_size)
         self.allgather_bucket_size = int(allgather_bucket_size)
 
@@ -1265,7 +1264,7 @@ class FP16_DeepSpeedZeroOptimizer(object):
         else:
             for fp16_partitions, fp32_partition in zip(self.parallel_partitioned_fp16_groups, self.single_partition_of_fp32_groups):
                 fp16_partitions[partition_id].data.copy_(fp32_partition.data)
-            #self.single_partition_of_fp32_groups_old=self.single_partition_of_fp32_groups
+
         timers('optimizer_step').stop()
 
         timers('optimizer_allgather').start()
