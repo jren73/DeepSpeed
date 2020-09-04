@@ -1,1 +1,0 @@
-../docs/_tutorials/azure.md
